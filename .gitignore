@@ -1,5 +1,4 @@
-.env
-credentials.json
+# .gitignore
 token.json
-__pycache__/
-*.pyc
+credentials.json
+.env
