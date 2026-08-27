@@ -15,6 +15,8 @@ from twilio.rest import Client
 from duckduckgo_search import DDGS
 import requests
 
+from retry import with_retry
+
 TWILIO_ACCOUNT_SID = ""
 TWILIO_AUTH_TOKEN = ""
 TWILIO_PHONE_NUMBER = ""
@@ -41,8 +43,11 @@ class SlackAgent:
         else:
             msg, channel = m.groups()
 
-        resp = await self.client.chat_postMessage(channel=channel, text=msg)
-        return resp
+        return await self._post(channel, msg)
+
+    @with_retry()
+    async def _post(self, channel: str, msg: str):
+        return await self.client.chat_postMessage(channel=channel, text=msg)
 
 class KnowledgeAgent:
     def __init__(self, directory="knowledge_base"):
@@ -77,11 +82,16 @@ class KnowledgeAgent:
         payload = {"contents": [{"parts": [{"text": final_prompt}]}]}
         gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
         try:
-            response = requests.post(gemini_url, headers=headers, json=payload, timeout=60)
-            response.raise_for_status()
+            response = self._post(gemini_url, headers, payload)
             return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
         except Exception as e:
             return f"Error consulting knowledge base: {e}"
+
+    @with_retry()
+    def _post(self, url, headers, payload):
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response.raise_for_status()
+        return response
 
 class SearchAgent:
     async def run(self, query: str) -> str:
@@ -116,16 +126,20 @@ class CalendarAgent:
 
     async def run(self, event_details: dict):
         try:
-            service = build("calendar", "v3", credentials=self.creds)
-            event = {
-                "summary": event_details.get("title"),
-                "start": {"dateTime": event_details["start_time"], "timeZone": "Asia/Kolkata"},
-                "end": {"dateTime": event_details["end_time"], "timeZone": "Asia/Kolkata"}
-            }
-            event = service.events().insert(calendarId="primary", body=event).execute()
+            event = self._insert_event(event_details)
             return event.get('htmlLink')
         except HttpError as error:
             raise Exception(f"Google Calendar API Error: {error}")
+
+    @with_retry()
+    def _insert_event(self, event_details: dict):
+        service = build("calendar", "v3", credentials=self.creds)
+        event = {
+            "summary": event_details.get("title"),
+            "start": {"dateTime": event_details["start_time"], "timeZone": "Asia/Kolkata"},
+            "end": {"dateTime": event_details["end_time"], "timeZone": "Asia/Kolkata"}
+        }
+        return service.events().insert(calendarId="primary", body=event).execute()
 
 class CommunicationAgent:
     def __init__(self):
@@ -135,11 +149,13 @@ class CommunicationAgent:
         else:
             self.client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
+    @with_retry()
     def send_sms(self, recipient: str, message: str) -> str:
         if not self.client: raise Exception("Twilio client not initialized.")
         message = self.client.messages.create(body=message, from_=TWILIO_PHONE_NUMBER, to=recipient)
         return message.sid
 
+    @with_retry()
     def make_call(self, recipient: str, message: str) -> str:
         if not self.client: raise Exception("Twilio client not initialized.")
         twiml_message = f'<Response><Say>{message}</Say></Response>'

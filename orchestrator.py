@@ -8,6 +8,7 @@ import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from agents import SlackAgent, KnowledgeAgent, SearchAgent, CalendarAgent, CommunicationAgent
+from retry import with_retry
 
 load_dotenv()
 
@@ -57,12 +58,17 @@ class TaskOrchestrator:
         self.plan = []
         self.context = {}
 
+    @with_retry()
+    def _post_to_gemini(self, payload: dict):
+        r = requests.post(GEMINI_API_URL, json=payload, timeout=60)
+        r.raise_for_status()
+        return r
+
     async def _gemini_request(self, data: dict, template: str, is_json=True):
         if not GEMINI_API_KEY:
             raise RuntimeError("Missing GEMINI_API_KEY")
         payload = {"contents": [{"parts": [{"text": template.format(**data)}]}]}
-        r = requests.post(GEMINI_API_URL, json=payload, timeout=60)
-        r.raise_for_status()
+        r = self._post_to_gemini(payload)
         text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
         if is_json:
             clean = re.sub(r"^```(?:json)?\\s*", "", text, flags=re.IGNORECASE)

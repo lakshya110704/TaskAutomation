@@ -6,6 +6,8 @@ from pydantic import BaseModel
 import asyncio
 import json
 import os
+import uuid
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -57,11 +59,28 @@ manager = ConnectionManager()
 
 class TaskRequest(BaseModel):
     prompt: str
+    # Optional client-supplied key (e.g. a UUID generated once per user action).
+    # Re-posting the same key returns the original task instead of running it twice —
+    # guards against double-clicks and client-side retries on a slow connection.
+    idempotency_key: Optional[str] = None
+
+# idempotency_key -> task_id, for tasks seen recently. Unbounded growth is fine
+# for this app's scale; a production version would use a TTL cache.
+_seen_tasks: dict[str, str] = {}
 
 @app.post("/api/tasks")
 async def create_task(task_request: TaskRequest):
     print(f"Received task: {task_request.prompt}")
-    task_id = "task_12345"
+
+    if task_request.idempotency_key:
+        existing_task_id = _seen_tasks.get(task_request.idempotency_key)
+        if existing_task_id:
+            return {"status": "Task already received", "task_id": existing_task_id}
+
+    task_id = f"task_{uuid.uuid4().hex[:12]}"
+    if task_request.idempotency_key:
+        _seen_tasks[task_request.idempotency_key] = task_id
+
     orch_instance = orchestrator.TaskOrchestrator(task_id, task_request.prompt, manager)
     asyncio.create_task(orch_instance.execute_plan())
     return {"status": "Task received", "task_id": task_id}
