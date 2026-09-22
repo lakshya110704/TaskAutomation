@@ -1,4 +1,4 @@
 # .gitignore
 token.json
 credentials.json
-.env
+.env.DS_Store
