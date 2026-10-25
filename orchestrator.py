@@ -71,14 +71,14 @@ class TaskOrchestrator:
         r = self._post_to_gemini(payload)
         text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
         if is_json:
-            clean = re.sub(r"^```(?:json)?\\s*", "", text, flags=re.IGNORECASE)
-            clean = re.sub(r"\\s*```$", "", clean).strip()
+            clean = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.IGNORECASE)
+            clean = re.sub(r"\s*```$", "", clean).strip()
             return json.loads(clean)
         return text
 
     async def execute_plan(self):
         m = re.search(
-            r"Post a message on\\s+(#[^\\s]+)\\s+channel in Slack saying ['\"](.+?)['\"]",
+            r"Post a message on\s+(#[^\s]+)\s+channel in Slack saying ['\"](.+?)['\"]",
             self.prompt,
             flags=re.IGNORECASE
         )
