@@ -39,6 +39,12 @@ Each step must have "agent" and "action" fields.
 User Request: "{user_prompt}"
 """
 
+# Every agent name the planner prompt may use, and the subset with a real executor
+# in TaskOrchestrator._execute_step. Keep both in sync with that method.
+PLANNER_AGENTS = ("KnowledgeAgent", "SearchAgent", "SlackAgent", "CalendarAgent", "CommunicationAgent")
+EXECUTABLE_AGENTS = ("KnowledgeAgent", "SearchAgent", "SlackAgent", "CalendarAgent")
+
+
 class TaskOrchestrator:
     def __init__(self, task_id: str, prompt: str, ws_manager):
         self.task_id = task_id
@@ -147,9 +153,20 @@ class TaskOrchestrator:
                 resp = await self.calendar_agent.run(event_details)
                 msg = f"Calendar event created: {resp}"
 
+            elif agent == "SearchAgent":
+                resp = await self.search_agent.run(action)
+                if resp.startswith("Error during search") or resp == "No results found.":
+                    raise RuntimeError(resp)
+                first = resp.splitlines()[0]
+                msg = f"Search completed: {first[:120]}"
+
+            elif agent == "CommunicationAgent":
+                # The SMS action is not parsed or sent yet; fail visibly instead of
+                # reporting success for work that never happened.
+                raise NotImplementedError("Agent not supported: CommunicationAgent")
+
             else:
-                await asyncio.sleep(1)
-                msg = f"Executed {agent}"
+                raise NotImplementedError(f"Agent not supported: {agent}")
 
             status = "completed"
             lt = "success"
