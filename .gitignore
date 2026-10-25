@@ -1,4 +1,10 @@
 # .gitignore
 token.json
 credentials.json
-.env.DS_Store
+.env
+.DS_Store
+
+# mock evaluation outputs are scaffolding, not results
+eval/results/mock_*
+__pycache__/
+.pytest_cache/
