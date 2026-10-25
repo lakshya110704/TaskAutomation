@@ -23,6 +23,10 @@ RETRYABLE_HTTP_STATUS = {429, 500, 502, 503, 504}
 
 def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, RequestException):
+        # HTTP errors carry a response: only retry transient statuses. No response
+        # means a timeout or connection failure, which is worth retrying.
+        if exc.response is not None:
+            return exc.response.status_code in RETRYABLE_HTTP_STATUS
         return True
     if isinstance(exc, SlackApiError):
         status = getattr(exc.response, "status_code", None)
