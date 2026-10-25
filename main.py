@@ -60,7 +60,7 @@ manager = ConnectionManager()
 class TaskRequest(BaseModel):
     prompt: str
     # Optional client-supplied key (e.g. a UUID generated once per user action).
-    # Re-posting the same key returns the original task instead of running it twice —
+    # Re-posting the same key returns the original task instead of running it twice,
     # guards against double-clicks and client-side retries on a slow connection.
     idempotency_key: Optional[str] = None
 

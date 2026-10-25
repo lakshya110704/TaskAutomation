@@ -42,7 +42,7 @@ def with_retry(max_attempts: int = 3):
     """Retry a flaky third-party API call with exponential backoff + jitter.
 
     Only retries errors that look transient (timeouts, connection errors,
-    429/5xx responses). Anything else — bad input, auth failure, 4xx — fails
+    429/5xx responses). Anything else (bad input, auth failure, 4xx) fails
     immediately instead of being retried.
     """
     return retry(
