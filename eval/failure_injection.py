@@ -140,22 +140,15 @@ def _patches(faults):
                 _raise("calendar", faults["calendar"])
             return {"htmlLink": "http://calendar/event"}
 
-    class FakeDDGS:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def text(self, query, max_results=3):
-            if faults["search"].should_fail():
-                _raise("search", faults["search"])
-            return [{"title": "T", "body": "B"}]
+    def fake_search_fetch(self, query, max_results=3):
+        if faults["search"].should_fail():
+            _raise("search", faults["search"])
+        return [{"title": "T", "body": "B"}]
 
     return [
         mock.patch.object(requests, "post", fake_requests_post),
         mock.patch.object(agents, "build", lambda *a, **k: FakeService()),
-        mock.patch.object(agents, "DDGS", FakeDDGS),
+        mock.patch.object(agents.SearchAgent, "_fetch", fake_search_fetch),
     ]
 
 

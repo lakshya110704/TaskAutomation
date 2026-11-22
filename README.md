@@ -106,7 +106,7 @@ For calendar use:
 - 📅 **CalendarAgent**: Schedule meetings using Google Calendar
 - 💬 **SlackAgent**: Send messages to Slack channels
 - 📞 **CommunicationAgent**: Twilio SMS/call code exists but the orchestrator does not run it yet (steps for it fail with "Agent not supported")
-- 🔍 **SearchAgent**: Web search via DuckDuckGo
+- 🔍 **SearchAgent**: Web search via DuckDuckGo's HTML results page
 - 📚 **KnowledgeAgent**: Query your custom `.txt` files using Gemini API
 
 ---
@@ -135,7 +135,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 pytest
 ```
 
-The suite (65 tests, run on Python 3.9.6 locally; 3.12 not run) covers plan parsing, the retry policy,
+The suite (73 tests, run on Python 3.9.6 locally; 3.12 not run) covers plan parsing, the retry policy,
 step execution, the scoring functions and failure injection. See [eval/README.md](eval/README.md) for
 how scoring works and its limits.
 
@@ -178,7 +178,7 @@ not fixed yet. In every scenario the other steps of the plan still completed.
 
 ### Known limitations
 
-- Calendar time parsing is a stub: every event is booked for tomorrow 10:00 to 11:00 and the requested time is ignored.
+- Calendar time parsing is basic: it understands "today" or "tomorrow" and times like 3pm or 9:30 am. Anything else is booked for tomorrow 10:00 to 11:00.
 - Actions are parsed with regexes, so a planner reply that deviates from the exact formats fails the step.
 - `CommunicationAgent` (SMS) is not wired into the orchestrator; steps for it fail visibly.
 - `SearchAgent` has no retry, and `KnowledgeAgent` hides errors as described above.

@@ -13,9 +13,10 @@ from retry import with_retry
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# The key goes in a header, not the URL, so HTTP errors (shown in the UI log) never contain it.
 GEMINI_API_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
-    f"gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    "gemini-3.1-flash-lite:generateContent"
 )
 
 PLANNER_PROMPT_TEMPLATE = """
@@ -32,6 +33,9 @@ Here are the available agents and their EXACT action formats:
 
 CRITICAL: Use the exact formats shown above. For SlackAgent, always use: Post "message"
 to #channel
+If a Slack message must contain the answer from an earlier KnowledgeAgent step, write the
+message as exactly {{result}}, for example: Post "{{result}}" to #channel
+For CalendarAgent, keep the day and time the user gave, for example: Schedule team sync for tomorrow at 3pm
 
 Respond with ONLY a JSON array of steps (no backticks or extra text).
 Each step must have "agent" and "action" fields.
@@ -66,7 +70,8 @@ class TaskOrchestrator:
 
     @with_retry()
     def _post_to_gemini(self, payload: dict):
-        r = requests.post(GEMINI_API_URL, json=payload, timeout=60)
+        r = requests.post(GEMINI_API_URL, json=payload, timeout=60,
+                          headers={"x-goog-api-key": GEMINI_API_KEY})
         r.raise_for_status()
         return r
 
@@ -142,10 +147,11 @@ class TaskOrchestrator:
                         raise ValueError(f"Could not parse knowledge add action: {action}")
                 else:
                     resp = await self.knowledge_agent.run(action)
-                    msg = f"Knowledge query completed"
+                    self.last_answer = resp
+                    msg = f"Answer: {resp}"
 
             elif agent == "SlackAgent":
-                resp = await self.slack_agent.execute(action)
+                resp = await self.slack_agent.execute(self._fill_result(action))
                 msg = f"Slack message posted successfully"
 
             elif agent == "CalendarAgent":
@@ -183,11 +189,26 @@ class TaskOrchestrator:
             "type": "log", "agent": agent, "message": msg, "log_type": lt
         }))
 
+    def _fill_result(self, action):
+        """Put the last knowledge answer into a Slack message that asks for it with
+        {result} or a [placeholder]. The whole message becomes the answer."""
+        answer = getattr(self, "last_answer", None)
+        m = re.match(r'^(Post\s+")(.+)("\s+to\s+#\S+)$', action, flags=re.IGNORECASE)
+        if not answer or not m or not re.search(r"\{result\}|\[[^\]]+\]", m.group(2)):
+            return action
+        return m.group(1) + " ".join(answer.split()) + m.group(3)
+
     def _parse_calendar_action(self, action):
         title_match = re.search(r'schedule\s+(?:a\s+)?(.+?)\s+for', action, re.IGNORECASE)
         title = title_match.group(1) if title_match else "Meeting"
-        tomorrow = datetime.now() + timedelta(days=1)
-        start_time = tomorrow.replace(hour=10, minute=0, second=0, microsecond=0)
+        # shortcut: only "today"/"tomorrow" and times like 3pm or 3:30 pm; anything else falls back to tomorrow 10:00.
+        day = datetime.now() + timedelta(days=0 if re.search(r"\btoday\b", action, re.IGNORECASE) else 1)
+        t = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b", action, re.IGNORECASE)
+        hour, minute = 10, 0
+        if t and 1 <= int(t.group(1)) <= 12:
+            hour = int(t.group(1)) % 12 + (12 if t.group(3).lower() == "p" else 0)
+            minute = int(t.group(2) or 0)
+        start_time = day.replace(hour=hour, minute=minute, second=0, microsecond=0)
         end_time = start_time + timedelta(hours=1)
         return {
             "title": title,

@@ -100,3 +100,34 @@ async def test_no_planner_agent_can_report_executed_without_work():
             assert status == "completed"
         else:
             assert status == "failed"
+
+
+async def test_knowledge_answer_is_shown_and_passed_to_slack():
+    orch = make_orchestrator(knowledge=Recorder("The CEO is\nPriya Sharma."))
+    await orch._execute_step({"agent": "KnowledgeAgent", "action": "What is the CEO?"})
+    assert orch.ws_manager.final_log == "Answer: The CEO is\nPriya Sharma."
+    for placeholder in ["{result}", "The CEO is [CEO name]"]:
+        await orch._execute_step({"agent": "SlackAgent", "action": f'Post "{placeholder}" to #demo'})
+        assert orch.slack_agent.calls[-1] == 'Post "The CEO is Priya Sharma." to #demo'
+
+
+async def test_slack_message_without_placeholder_is_unchanged():
+    orch = make_orchestrator()
+    orch.last_answer = "something"
+    await orch._execute_step({"agent": "SlackAgent", "action": 'Post "Team meeting at 3pm" to #demo'})
+    assert orch.slack_agent.calls[-1] == 'Post "Team meeting at 3pm" to #demo'
+
+
+@pytest.mark.parametrize("action,days,hour,minute", [
+    ("Schedule team meeting for tomorrow at 3pm", 1, 15, 0),
+    ("Schedule standup for today at 9:30 am", 0, 9, 30),
+    ("Schedule lunch for tomorrow at 12pm", 1, 12, 0),
+    ("Schedule review for tomorrow", 1, 10, 0),
+])
+def test_calendar_time_parsing(action, days, hour, minute):
+    from datetime import datetime, timedelta
+    d = make_orchestrator()._parse_calendar_action(action)
+    start = datetime.fromisoformat(d["start_time"])
+    assert start.date() == (datetime.now() + timedelta(days=days)).date()
+    assert (start.hour, start.minute) == (hour, minute)
+    assert datetime.fromisoformat(d["end_time"]) - start == timedelta(hours=1)

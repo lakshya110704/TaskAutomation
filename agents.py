@@ -3,6 +3,7 @@
 import os
 import os.path
 import re
+import html
 from slack_sdk import WebClient
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.errors import SlackApiError
@@ -12,7 +13,6 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from twilio.rest import Client
-from duckduckgo_search import DDGS
 import requests
 
 from retry import with_retry
@@ -78,9 +78,10 @@ class KnowledgeAgent:
             return "Knowledge base is empty."
         prompt_template = "Context: {context}\n\nQuestion: {question}\n\nAnswer based only on the context:"
         final_prompt = prompt_template.format(context=self.knowledge, question=query)
-        headers = {"Content-Type": "application/json"}
+        # Key in a header, not the URL, so error messages never contain it.
+        headers = {"Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY}
         payload = {"contents": [{"parts": [{"text": final_prompt}]}]}
-        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+        gemini_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent"
         try:
             response = self._post(gemini_url, headers, payload)
             return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
@@ -96,12 +97,22 @@ class KnowledgeAgent:
 class SearchAgent:
     async def run(self, query: str) -> str:
         try:
-            with DDGS() as ddgs:
-                results = [r for r in ddgs.text(query, max_results=3)]
-                if not results: return "No results found."
-                return "\n".join([f"{r['title']}: {r['body']}" for r in results])
+            results = self._fetch(query)
+            if not results: return "No results found."
+            return "\n".join([f"{r['title']}: {r['body']}" for r in results])
         except Exception as e:
             return f"Error during search: {e}"
+
+    def _fetch(self, query: str, max_results: int = 3):
+        # DuckDuckGo's plain HTML results page. The duckduckgo_search package returned
+        # unrelated results (dictionary pages for "best") on most queries.
+        r = requests.post("https://html.duckduckgo.com/html/", data={"q": query},
+                          headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+        r.raise_for_status()
+        clean = lambda s: html.unescape(re.sub(r"<.*?>", "", s)).strip()
+        titles = re.findall(r'class="result__a"[^>]*>(.*?)</a>', r.text, re.S)
+        bodies = re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', r.text, re.S)
+        return [{"title": clean(t), "body": clean(b)} for t, b in zip(titles, bodies)][:max_results]
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 class CalendarAgent:
