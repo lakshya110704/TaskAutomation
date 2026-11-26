@@ -1,5 +1,6 @@
 
 
+import asyncio
 import os
 import os.path
 import re
@@ -83,7 +84,7 @@ class KnowledgeAgent:
         payload = {"contents": [{"parts": [{"text": final_prompt}]}]}
         gemini_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent"
         try:
-            response = self._post(gemini_url, headers, payload)
+            response = await asyncio.to_thread(self._post, gemini_url, headers, payload)
             return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
         except Exception as e:
             return f"Error consulting knowledge base: {e}"
@@ -97,7 +98,7 @@ class KnowledgeAgent:
 class SearchAgent:
     async def run(self, query: str) -> str:
         try:
-            results = self._fetch(query)
+            results = await asyncio.to_thread(self._fetch, query)
             if not results: return "No results found."
             return "\n".join([f"{r['title']}: {r['body']}" for r in results])
         except Exception as e:
@@ -137,7 +138,7 @@ class CalendarAgent:
 
     async def run(self, event_details: dict):
         try:
-            event = self._insert_event(event_details)
+            event = await asyncio.to_thread(self._insert_event, event_details)
             return event.get('htmlLink')
         except HttpError as error:
             raise Exception(f"Google Calendar API Error: {error}")
