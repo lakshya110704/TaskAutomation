@@ -356,6 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let runningAction = null;
   let logCount = 0;
   let steps = [];
+  let lastAnswer = null;
 
   if (!/Mac|iPhone|iPad/.test(navigator.platform)) {
     hint.innerHTML = hint.innerHTML.replace('⌘', 'Ctrl');
@@ -430,6 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function resetUI() {
     steps = [];
     runningAction = null;
+    lastAnswer = null;
     planMeta.textContent = '';
     taskPlanContainer.innerHTML = `
       <p class="skeleton-note">The planner is breaking your task into steps…</p>
@@ -518,7 +520,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!steps.length) return;
     const finished = steps.filter(s => s.status === 'completed' || s.status === 'failed').length;
     const failed = steps.filter(s => s.status === 'failed').length;
-    if (done) planMeta.textContent = failed ? `Finished, ${failed} of ${steps.length} failed` : `All ${steps.length} steps done`;
+    if (done) planMeta.textContent = failed ? `Finished, ${failed} of ${steps.length} failed` : (steps.length === 1 ? 'Step done' : `All ${steps.length} steps done`);
     else planMeta.textContent = `${finished} of ${steps.length} done`;
   }
 
@@ -552,11 +554,25 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!runningAction || data.log_type === 'info') return;
     const el = document.getElementById(stepId(runningAction));
     if (!el || !(el.classList.contains('completed') || el.classList.contains('failed'))) return;
+    if (data.agent === 'KnowledgeAgent' && data.log_type === 'success' && data.message.startsWith('Answer:')) {
+      lastAnswer = data.message.replace(/^Answer:\s*/, '').split(/\s+/).join(' ');
+      fillResultLabels();
+    }
     const p = document.createElement('p');
     p.className = 'step-result';
     p.textContent = data.message.replace(/^Answer:\s*/, '');
     el.querySelector('.step-action').after(p);
     runningAction = null;
+  }
+
+  // A Slack step can ask for the previous knowledge answer with {result} or a
+  // [placeholder]; the orchestrator swaps it in when it sends, so do the same here.
+  function fillResultLabels() {
+    document.querySelectorAll('.step').forEach(el => {
+      const label = el.querySelector('.step-action');
+      const m = label.textContent.match(/^(Post\s+")(.+)("\s+to\s+#\S+)$/i);
+      if (m && /\{result\}|\[[^\]]+\]/.test(m[2])) label.textContent = m[1] + lastAnswer + m[3];
+    });
   }
 
   function addLogEntry(agent, message, type) {
