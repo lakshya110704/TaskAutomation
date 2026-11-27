@@ -79,7 +79,9 @@ class TaskOrchestrator:
         if not GEMINI_API_KEY:
             raise RuntimeError("Missing GEMINI_API_KEY")
         payload = {"contents": [{"parts": [{"text": template.format(**data)}]}]}
-        r = self._post_to_gemini(payload)
+        # requests is blocking; run it in a worker thread so a slow Gemini reply
+        # doesn't freeze the event loop (websocket updates and other requests).
+        r = await asyncio.to_thread(self._post_to_gemini, payload)
         text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
         if is_json:
             clean = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.IGNORECASE)
